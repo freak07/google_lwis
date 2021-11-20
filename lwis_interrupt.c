@@ -108,7 +108,7 @@ int lwis_interrupt_get(struct lwis_interrupt_list *list, int index, char *name,
 	list->irq[index].has_events = false;
 	list->irq[index].lwis_dev = list->lwis_dev;
 
-	request_irq(irq, lwis_interrupt_event_isr, IRQF_SHARED, list->irq[index].full_name,
+	(void)request_irq(irq, lwis_interrupt_event_isr, IRQF_SHARED, list->irq[index].full_name,
 		    &list->irq[index]);
 
 	if (lwis_plaform_set_default_irq_affinity(list->irq[index].irq) != 0) {
