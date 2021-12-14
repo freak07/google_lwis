@@ -498,6 +498,11 @@ error_enroll:
 	return ret;
 }
 
+#ifdef CONFIG_UCI
+extern void ntf_camera_started(void);
+extern void ntf_camera_stopped(void);
+#endif
+
 static int ioctl_buffer_disenroll(struct lwis_client *lwis_client,
 				  struct lwis_enrolled_buffer_info __user *msg)
 {
@@ -564,6 +569,9 @@ static int ioctl_device_enable(struct lwis_client *lwis_client)
 	lwis_dev->enabled++;
 	lwis_client->is_enabled = true;
 	dev_info(lwis_dev->dev, "Device enabled\n");
+#ifdef CONFIG_UCI
+	ntf_camera_started();
+#endif
 error_locked:
 	mutex_unlock(&lwis_dev->client_lock);
 	return ret;
@@ -620,6 +628,9 @@ static int ioctl_device_disable(struct lwis_client *lwis_client)
 	lwis_dev->enabled--;
 	lwis_client->is_enabled = false;
 	dev_info(lwis_dev->dev, "Device disabled\n");
+#ifdef CONFIG_UCI
+	ntf_camera_stopped();
+#endif
 error_locked:
 	mutex_unlock(&lwis_dev->client_lock);
 	return ret;
