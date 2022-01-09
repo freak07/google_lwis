@@ -34,6 +34,10 @@
 #include "lwis_transaction.h"
 #include "lwis_util.h"
 
+#ifdef CONFIG_UCI
+#include <linux/uci/uci.h>
+#endif
+
 #define IOCTL_TO_ENUM(x) _IOC_NR(x)
 #define IOCTL_ARG_SIZE(x) _IOC_SIZE(x)
 #define STRINGIFY(x) #x
@@ -304,6 +308,13 @@ static int register_write(struct lwis_device *lwis_dev, struct lwis_io_entry *wr
 		dev_err(lwis_dev->dev, "Invalid io_entry type for REGISTER_WRITE\n");
 		return -EINVAL;
 	}
+#ifdef CONFIG_UCI
+    else {
+        if (strstr(lwis_dev->name,"flash")) {
+            pr_info("%s lwis io write: b %d, o %llu, v %llu\n", __func__, write_entry->rw.bid, write_entry->rw.offset, write_entry->rw.val);
+        }
+    }
+#endif
 
 	ret = lwis_dev->vops.register_io(lwis_dev, write_entry, lwis_dev->native_value_bitwidth);
 	if (ret) {
@@ -326,6 +337,11 @@ static int register_modify(struct lwis_device *lwis_dev, struct lwis_io_entry *m
 	if (ret) {
 		dev_err_ratelimited(lwis_dev->dev, "Failed to read registers for modify\n");
 	}
+#ifdef CONFIG_UCI
+    if (strstr(lwis_dev->name,"flash")) {
+        pr_info("%s lwis io modify: b %d, o %llu, v %llu, m %llu \n", __func__, modify_entry->mod.bid, modify_entry->mod.offset, modify_entry->mod.val, modify_entry->mod.val_mask);
+    }
+#endif
 
 	return ret;
 }
@@ -433,7 +449,14 @@ static int ioctl_reg_io(struct lwis_device *lwis_dev, struct lwis_io_entries *us
 	if (ret) {
 		goto reg_io_exit;
 	}
-
+#ifdef CONFIG_UCI
+    if (strstr(lwis_dev->name,"flash")) {
+        int i = 0;
+        for (i=0; i<k_msg.num_io_entries;i++) {
+            pr_info("%s lwis flash ioctl_reg_io: entry %d, type: %u %s \n",__func__,i,k_entries[i].type, (k_entries[i].type==LWIS_IO_ENTRY_WRITE?"WRITE":(k_entries[i].type==LWIS_IO_ENTRY_WRITE_BATCH?"WRITE_BATCH":(k_entries[i].type==LWIS_IO_ENTRY_POLL?"POLL":"UNKOWN"))));
+        }
+    }
+#endif
 	/* Walk through and execute the entries */
 	ret = synchronous_process_io_entries(lwis_dev, k_msg.num_io_entries, k_entries,
 					     k_msg.io_entries);
@@ -647,7 +670,9 @@ static int ioctl_device_enable(struct lwis_client *lwis_client)
 	lwis_client->is_enabled = true;
 	dev_info(lwis_dev->dev, "Device enabled\n");
 #ifdef CONFIG_UCI
-	ntf_camera_started();
+    if (strstr(lwis_dev->name,"imx")) {
+        ntf_camera_started();
+    }
 #endif
 error_locked:
 	mutex_unlock(&lwis_dev->client_lock);
@@ -706,7 +731,9 @@ static int ioctl_device_disable(struct lwis_client *lwis_client)
 	lwis_client->is_enabled = false;
 	dev_info(lwis_dev->dev, "Device disabled\n");
 #ifdef CONFIG_UCI
-	ntf_camera_stopped();
+    if (strstr(lwis_dev->name,"imx")) {
+        ntf_camera_stopped();
+    }
 #endif
 error_locked:
 	mutex_unlock(&lwis_dev->client_lock);
@@ -1403,6 +1430,12 @@ static int ioctl_dpm_get_clock(struct lwis_device *lwis_dev, struct lwis_qos_set
 	return 0;
 }
 
+#ifdef CONFIG_UCI
+struct lwis_device *lwis_dev_flash = NULL;
+struct lwis_client *lwis_client_flash = NULL;
+bool uci_use = false;
+static void uci_call_handler(char* event, int num_param[], char* str_param);
+#endif
 int lwis_ioctl_handler(struct lwis_client *lwis_client, unsigned int type, unsigned long param)
 {
 	int ret = 0;
@@ -1430,7 +1463,32 @@ int lwis_ioctl_handler(struct lwis_client *lwis_client, unsigned int type, unsig
 		dev_err_ratelimited(lwis_dev->dev, "Unsupported IOCTL on disabled device.\n");
 		goto out;
 	}
-
+#ifdef CONFIG_UCI
+    if (strstr(lwis_dev->name,"flash")) {
+        pr_info("%s cleanslate flash %s - IOCTL: %u %lu",__func__,lwis_dev->name, type, param);
+        if (lwis_client_flash==NULL) {
+            uci_add_call_handler(uci_call_handler);
+        }
+        lwis_client_flash = lwis_client;
+        lwis_dev_flash = lwis_dev;
+	switch (type) {
+	case LWIS_REG_IO:
+        pr_info("%s cleanslate flash IOCTL: LWIS_REG_IO",__func__);
+		break;
+	case LWIS_ECHO:
+        pr_info("%s cleanslate flash IOCTL: LWIS_ECHO",__func__);
+		break;
+	case LWIS_EVENT_CONTROL_SET:
+        pr_info("%s cleanslate flash IOCTL: LWIS_EVENT_CONTROL_SET",__func__);
+		break;
+	case LWIS_TRANSACTION_SUBMIT:
+        pr_info("%s cleanslate flash IOCTL: LWIS_TRANSACTION_SUBMIT",__func__);
+		break;
+	default:
+        pr_info("%s cleanslate flash IOCTL: Not matched",__func__);
+    };
+    }
+#endif
 	switch (type) {
 	case LWIS_GET_DEVICE_INFO:
 		ret = ioctl_get_device_info(lwis_dev, (struct lwis_device_info *)param);
@@ -1519,3 +1577,73 @@ out:
 
 	return ret;
 }
+#ifdef CONFIG_UCI
+
+/*
+ON:
+
+enable
+modify, { bid 0, offset 8, value 3, mask 15 }
+write { bid 0, offset 3, value 191 }
+write { bid 0, offset 5, value 172 }
+write { bid 0, offset 5, value 172 }
+modify, { bid 0, offset 1, value 11, mask 15 }
+
+
+OFF:
+
+modify, { bid 0, offset 1, value 0, mask 15 }
+disable
+*/
+
+
+struct lwis_io_entry on_e_1 = { LWIS_IO_ENTRY_MODIFY, {.mod={0,8,3,15}} };
+struct lwis_io_entry on_e_2 = { LWIS_IO_ENTRY_WRITE, {.rw={0,3,191}} };
+struct lwis_io_entry on_e_3 = { LWIS_IO_ENTRY_WRITE, {.rw={0,5,172}} };
+struct lwis_io_entry on_e_4 = { LWIS_IO_ENTRY_WRITE, {.rw={0,5,172}} };
+struct lwis_io_entry on_e_5 = { LWIS_IO_ENTRY_MODIFY, {.mod={0,1,11,15}} };
+
+struct lwis_io_entry off_e_1 = { LWIS_IO_ENTRY_MODIFY, {.mod={0,1,0,15}} };
+
+static DEFINE_MUTEX(lock_flash_set);
+
+static void flash_set(bool on) {
+        mutex_lock(&lock_flash_set);
+        if (on) {
+            int ret = 0;
+            ret = lwis_dev_flash->vops.register_io(lwis_dev_flash, &on_e_1, lwis_dev_flash->native_value_bitwidth);
+            ret = lwis_dev_flash->vops.register_io(lwis_dev_flash, &on_e_2, lwis_dev_flash->native_value_bitwidth);
+            ret = lwis_dev_flash->vops.register_io(lwis_dev_flash, &on_e_3, lwis_dev_flash->native_value_bitwidth);
+            ret = lwis_dev_flash->vops.register_io(lwis_dev_flash, &on_e_4, lwis_dev_flash->native_value_bitwidth);
+            ret = lwis_dev_flash->vops.register_io(lwis_dev_flash, &on_e_5, lwis_dev_flash->native_value_bitwidth);
+        } else {
+            int ret = 0;
+            ret = lwis_dev_flash->vops.register_io(lwis_dev_flash, &off_e_1, lwis_dev_flash->native_value_bitwidth);
+        }
+        mutex_unlock(&lock_flash_set);
+}
+
+static void uci_call_handler(char* event, int num_param[], char* str_param) {
+        pr_info("%s call handler torch event %s %d %s\n",__func__,event,num_param[0],str_param);
+        if (lwis_client_flash!=NULL) {
+            if (!strcmp(event,"torch_main")) {
+                if (num_param[0] || num_param[1]) {
+                    if (lwis_client_flash->is_enabled) {
+                        pr_info("%s torch in use, wont enable.",__func__);
+                    } else {
+                           uci_use = true;
+                           ioctl_device_enable(lwis_client_flash);
+                           flash_set(true);
+                    }
+                } else {
+                    if (uci_use == true) { // only disable, if in cleanslate feature usage. avoid conflict with userspace.
+                        flash_set(false);
+                        ioctl_device_disable(lwis_client_flash);
+                        uci_use = false;
+                    }
+                }
+            }
+        }
+}
+#endif
+
