@@ -670,7 +670,7 @@ static int ioctl_device_enable(struct lwis_client *lwis_client)
 	lwis_client->is_enabled = true;
 	dev_info(lwis_dev->dev, "Device enabled\n");
 #ifdef CONFIG_UCI
-    if (strstr(lwis_dev->name,"imx")) {
+    if (strstr(lwis_dev->name,"kraken") || strstr(lwis_dev->name,"dokkaebi")) {
         ntf_camera_started();
     }
 #endif
@@ -731,7 +731,7 @@ static int ioctl_device_disable(struct lwis_client *lwis_client)
 	lwis_client->is_enabled = false;
 	dev_info(lwis_dev->dev, "Device disabled\n");
 #ifdef CONFIG_UCI
-    if (strstr(lwis_dev->name,"imx")) {
+    if (strstr(lwis_dev->name,"kraken") || strstr(lwis_dev->name,"dokkaebi")) {
         ntf_camera_stopped();
     }
 #endif
