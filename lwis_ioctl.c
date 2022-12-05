@@ -398,7 +398,6 @@ static int synchronous_process_io_entries(struct lwis_device *lwis_dev, int num_
 						   /*use_read_barrier=*/false,
 						   /*use_write_barrier=*/true);
 	}
-	mutex_lock(&lwis_dev->reg_rw_lock);
 	for (i = 0; i < num_io_entries; i++) {
 		switch (io_entries[i].type) {
 		case LWIS_IO_ENTRY_MODIFY:
@@ -428,7 +427,6 @@ static int synchronous_process_io_entries(struct lwis_device *lwis_dev, int num_
 		}
 	}
 exit:
-	mutex_unlock(&lwis_dev->reg_rw_lock);
 	/* Use read memory barrier at the end of I/O entries if the access protocol
 	 * allows it */
 	if (lwis_dev->vops.register_io_barrier != NULL) {
@@ -1132,6 +1130,11 @@ static int ioctl_transaction_submit(struct lwis_client *client,
 	struct lwis_transaction *k_transaction = NULL;
 	struct lwis_transaction_info k_transaction_info;
 	struct lwis_device *lwis_dev = client->lwis_dev;
+
+	if (lwis_dev->type == DEVICE_TYPE_SLC) {
+		dev_err(lwis_dev->dev, "not supported device type: %d\n", lwis_dev->type);
+		return -EINVAL;
+	}
 
 	ret = construct_transaction(client, msg, &k_transaction);
 	if (ret) {

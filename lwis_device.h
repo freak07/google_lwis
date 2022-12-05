@@ -203,8 +203,6 @@ struct lwis_device {
 	DECLARE_HASHTABLE(event_states, EVENT_HASH_BITS);
 	/* Virtual function table for sub classes */
 	struct lwis_device_subclass_operations vops;
-	/* Mutex used to synchronize register access between clients */
-	struct mutex reg_rw_lock;
 	/* Heartbeat timer structure */
 	struct timer_list heartbeat_timer;
 	/* Register-related properties */
