@@ -22,7 +22,6 @@
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
 #include <linux/poll.h>
-#include <linux/workqueue.h>
 
 #include "lwis_clock.h"
 #include "lwis_commands.h"
@@ -261,6 +260,8 @@ struct lwis_device {
 	struct task_struct *transaction_worker_thread;
 	struct kthread_worker periodic_io_worker;
 	struct task_struct *periodic_io_worker_thread;
+	struct kthread_worker subscribe_worker;
+	struct task_struct *subscribe_worker_thread;
 };
 
 /*
@@ -288,12 +289,9 @@ struct lwis_client {
 	DECLARE_HASHTABLE(enrolled_buffers, BUFFER_HASH_BITS);
 	/* Hash table of transactions keyed by trigger event ID */
 	DECLARE_HASHTABLE(transaction_list, TRANSACTION_HASH_BITS);
-	/* Transaction task-related variables */
-	struct tasklet_struct transaction_tasklet;
 	/* Spinlock used to synchronize access to transaction data structs */
 	spinlock_t transaction_lock;
 	/* List of transaction triggers */
-	struct list_head transaction_process_queue_tasklet;
 	struct list_head transaction_process_queue;
 	/* Transaction counter, which also provides transacton ID */
 	int64_t transaction_counter;

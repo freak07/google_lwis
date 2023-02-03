@@ -15,7 +15,6 @@
 #include <linux/completion.h>
 #include <linux/kthread.h>
 #include <linux/slab.h>
-#include <linux/workqueue.h>
 
 #include "lwis_allocator.h"
 #include "lwis_event.h"

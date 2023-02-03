@@ -158,7 +158,7 @@ static int lwis_cleanup_client(struct lwis_client *lwis_client)
 	/* Clean up all periodic io state for the client */
 	lwis_periodic_io_client_cleanup(lwis_client);
 
-	/* Cancel all pending transactions for the client and destory workqueue*/
+	/* Cancel all pending transactions for the client */
 	lwis_transaction_clear(lwis_client);
 
 	/* Run cleanup transactions. */
@@ -1105,6 +1105,18 @@ static struct lwis_device *find_top_dev(void)
 	return NULL;
 }
 
+static void event_heartbeat_timer(struct timer_list *t)
+{
+	struct lwis_device *lwis_dev = from_timer(lwis_dev, t, heartbeat_timer);
+	int64_t event_id = LWIS_EVENT_ID_HEARTBEAT | (int64_t)lwis_dev->id
+							     << LWIS_EVENT_ID_EVENT_CODE_LEN;
+
+	lwis_device_event_emit(lwis_dev, event_id, NULL, 0,
+			       /*in_irq=*/false);
+
+	mod_timer(t, jiffies + msecs_to_jiffies(1000));
+}
+
 /*
  *  lwis_find_dev_by_id: Find LWIS device by id.
  */
@@ -1240,6 +1252,8 @@ int lwis_base_probe(struct lwis_device *lwis_dev, struct platform_device *plat_d
 	lwis_device_debugfs_setup(lwis_dev, core.dbg_root);
 	memset(&lwis_dev->debug_info, 0, sizeof(lwis_dev->debug_info));
 
+	timer_setup(&lwis_dev->heartbeat_timer, event_heartbeat_timer, 0);
+
 	dev_info(lwis_dev->dev, "Base Probe: Success\n");
 
 	return ret;
@@ -1316,6 +1330,9 @@ void lwis_base_unprobe(struct lwis_device *unprobe_lwis_dev)
 					       MKDEV(core.device_major, lwis_dev->id));
 			}
 			list_del(&lwis_dev->dev_list);
+
+			if (timer_pending(&lwis_dev->heartbeat_timer))
+				del_timer(&lwis_dev->heartbeat_timer);
 		}
 	}
 	mutex_unlock(&core.lock);
